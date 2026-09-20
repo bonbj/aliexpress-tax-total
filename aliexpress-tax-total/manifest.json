@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "AliExpress Total com Imposto",
+  "version": "1.2",
+  "description": "Exibe o valor final com a soma do produto + imposto estimado.",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.aliexpress.com/item/*",
+        "*://*.aliexpress.com/p/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
