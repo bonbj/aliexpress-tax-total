@@ -35,7 +35,6 @@ function findTaxElement() {
     .filter((el) => {
       if (isOurBadge(el)) return false;
       const text = el.textContent || '';
-      // Linha típica: "International purchase, +R$673,62 estimated tax"
       const hasTaxLabel = /estimated\s*tax|imposto/i.test(text);
       const hasMoney = /R\$\s*[\d.,]+/.test(text);
       return hasTaxLabel && hasMoney;
@@ -43,7 +42,6 @@ function findTaxElement() {
 
   if (candidates.length === 0) return null;
 
-  // Menor texto = nó mais específico (evita containers enormes)
   candidates.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
   return candidates[0];
 }
@@ -63,7 +61,6 @@ function isStrikethroughPrice(el) {
 }
 
 function findItemPrice(taxElement, taxValue) {
-  // Busca preços reais no bloco (ignora preço riscado / "de")
   let container = taxElement.parentElement;
   for (let depth = 0; depth < 8 && container; depth++, container = container.parentElement) {
     if (isOurBadge(container)) continue;
@@ -75,20 +72,16 @@ function findItemPrice(taxElement, taxValue) {
         if (isStrikethroughPrice(el)) return false;
         if ((el.textContent || '').length > 32) return false;
         if (!/R\$\s*[\d.,]+/.test(el.textContent || '')) return false;
-        // Precisa preceder o imposto no DOM
         return !!(taxElement.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING);
       })
       .map((el) => ({ el, val: parseMoney(el.textContent) }))
       .filter((item) => item.val != null && Math.abs(item.val - taxValue) > 0.001);
 
     if (priceCandidates.length > 0) {
-      // No AliExpress: preço atual primeiro, depois % off e preço riscado.
-      // Com riscado filtrado, o primeiro candidato é o preço vigente.
       return priceCandidates[0].val;
     }
   }
 
-  // Fallback por texto: primeiro R$ antes do rótulo de imposto (não o último = riscado)
   container = taxElement.parentElement;
   for (let depth = 0; depth < 8 && container; depth++, container = container.parentElement) {
     const text = container.textContent || '';
@@ -102,6 +95,89 @@ function findItemPrice(taxElement, taxValue) {
   }
 
   return null;
+}
+
+function findShippingPrice(itemPrice, taxValue) {
+  const shippingLabel = /ship\s*from|shipping|frete|envio|standard\s*:|entrega|delivery|economia|AliExpress\s*Saver/i;
+  const freeShipping = /free\s*shipping|frete\s*gr[aá]tis|envio\s*gr[aá]tis|gr[aá]tis/i;
+
+  const candidates = Array.from(document.querySelectorAll('span, div, p, strong, b, li, a'))
+    .filter((el) => {
+      if (isOurBadge(el)) return false;
+      const text = (el.textContent || '').trim();
+      if (!text || text.length > 160) return false;
+      if (!shippingLabel.test(text) && !freeShipping.test(text)) return false;
+      // Evita a linha de imposto
+      if (/estimated\s*tax|imposto/i.test(text)) return false;
+      return /R\$\s*[\d.,]+/.test(text) || freeShipping.test(text);
+    });
+
+  if (candidates.length === 0) return { value: 0, found: false };
+
+  candidates.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+
+  for (const el of candidates) {
+    const text = el.textContent || '';
+    if (freeShipping.test(text) && !/R\$\s*[\d.,]+/.test(text)) {
+      return { value: 0, found: true };
+    }
+
+    const amounts = parseAllMoney(text)
+      .map((a) => a.val)
+      .filter(
+        (val) =>
+          Math.abs(val - itemPrice) > 0.001 &&
+          Math.abs(val - taxValue) > 0.001
+      );
+
+    if (amounts.length > 0) {
+      return { value: amounts[0], found: true };
+    }
+  }
+
+  return { value: 0, found: false };
+}
+
+function buildBadgeContent(itemPrice, taxValue, shipping) {
+  const shippingValue = shipping.found ? shipping.value : 0;
+  const total = itemPrice + taxValue + shippingValue;
+
+  const shippingLine = shipping.found
+    ? `Frete: ${shippingValue === 0 ? 'Grátis' : formatMoney(shippingValue)}`
+    : 'Frete: —';
+
+  return {
+    total,
+    totalFormatted: formatMoney(total),
+    html: `
+      <div style="font-size:12px;font-weight:600;opacity:.85;margin-bottom:4px;">Resumo do custo</div>
+      <div style="font-size:13px;font-weight:500;line-height:1.45;">
+        Produto: ${formatMoney(itemPrice)}<br>
+        Imposto: ${formatMoney(taxValue)}<br>
+        ${shippingLine}
+      </div>
+      <div style="margin-top:6px;padding-top:6px;border-top:1px solid #f98888;font-size:15px;font-weight:bold;">
+        Total: ${formatMoney(total)}
+      </div>
+    `.trim(),
+    signature: `${itemPrice}|${taxValue}|${shipping.found ? shippingValue : 'na'}`
+  };
+}
+
+function applyBadgeStyles(badge) {
+  badge.style.cssText = `
+    display: block;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    background: #fdf2f2;
+    border: 1px solid #f98888;
+    border-radius: 6px;
+    color: #e52e04;
+    width: fit-content;
+    max-width: 320px;
+    box-sizing: border-box;
+  `;
 }
 
 function calculateAndInjectTotal() {
@@ -119,34 +195,21 @@ function calculateAndInjectTotal() {
   const itemPrice = findItemPrice(taxElement, taxValue);
   if (itemPrice == null) return;
 
-  const total = itemPrice + taxValue;
-  const totalFormatted = formatMoney(total);
-  const label = `Total (Produto + Imposto): ${totalFormatted}`;
+  const shipping = findShippingPrice(itemPrice, taxValue);
+  const content = buildBadgeContent(itemPrice, taxValue, shipping);
 
   if (existingBadge) {
-    if (existingBadge.getAttribute('data-total') === totalFormatted) return;
-    existingBadge.textContent = label;
-    existingBadge.setAttribute('data-total', totalFormatted);
+    if (existingBadge.getAttribute('data-total') === content.signature) return;
+    existingBadge.innerHTML = content.html;
+    existingBadge.setAttribute('data-total', content.signature);
     return;
   }
 
   const badge = document.createElement('div');
   badge.id = 'ali-custom-tax-total';
-  badge.setAttribute('data-total', totalFormatted);
-  badge.textContent = label;
-  badge.style.cssText = `
-    display: block;
-    margin-top: 6px;
-    margin-bottom: 6px;
-    padding: 6px 10px;
-    background: #fdf2f2;
-    border: 1px solid #f98888;
-    border-radius: 6px;
-    color: #e52e04;
-    font-size: 15px;
-    font-weight: bold;
-    width: fit-content;
-  `;
+  badge.setAttribute('data-total', content.signature);
+  badge.innerHTML = content.html;
+  applyBadgeStyles(badge);
 
   taxElement.insertAdjacentElement('afterend', badge);
 }
@@ -170,7 +233,6 @@ function start() {
   });
 
   calculateAndInjectTotal();
-  // AliExpress renderiza preço/imposto de forma assíncrona
   setTimeout(calculateAndInjectTotal, 1000);
   setTimeout(calculateAndInjectTotal, 3000);
 }

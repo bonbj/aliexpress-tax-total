@@ -1,65 +1,79 @@
 # AliExpress Total com Imposto
 
-Extensão para o **Google Chrome** (Manifest V3) que mostra o **valor final** de um produto no AliExpress somando o preço do item ao imposto estimado.
+Extensão para o **Google Chrome** (Manifest V3) que mostra o **custo real** de um produto no AliExpress: **produto + imposto estimado + frete**, com o **Total** em destaque.
+
+**Versão atual:** 1.3
 
 ---
 
 ## Por que existe?
 
-Nas páginas de produto do AliExpress (especialmente compras internacionais para o Brasil), o site exibe:
+Nas páginas de produto do AliExpress (compras internacionais para o Brasil), os custos aparecem espalhados:
 
-1. O **preço do produto**
-2. Separadamente, o **imposto estimado** (`estimated tax` / `imposto`)
+1. **Preço do produto** (em destaque, vermelho)
+2. **Imposto estimado** (`estimated tax` / `imposto`) logo abaixo
+3. **Frete** em outro bloco (`Standard`, `Ship from`, etc.)
 
-O valor que você realmente paga é a **soma dos dois**, mas o AliExpress não destaca esse total de forma clara. É fácil olhar só o preço vermelho e esquecer o imposto logo abaixo.
+O valor que você realmente paga é a **soma dos três**, mas o site não deixa isso óbvio. É fácil olhar só o preço vermelho e esquecer imposto e frete.
 
-Esta extensão resolve isso: calcula `produto + imposto` e injeta um aviso vermelho logo abaixo da linha de imposto.
-
-### Exemplo
-
-| Item | Valor |
-|------|-------|
-| Preço do produto | R$ 3.812,63 |
-| Imposto estimado | R$ 3.335,96 |
-| **Total real** | **R$ 7.148,59** |
+Esta extensão lê esses valores e injeta um **Resumo do custo** com o **Total** logo abaixo da linha de imposto.
 
 ---
 
 ## Como fica na página
 
-### Página de produto no AliExpress
+### Página de produto com a extensão ativa
 
-O preço e a linha de imposto estimado aparecem assim:
+O resumo aparece abaixo do imposto estimado:
 
-![Página de produto no AliExpress com preço e imposto estimado](docs/pagina-produto.png)
+![Página do AliExpress com o Resumo do custo injetado](docs/pagina-com-resumo.png)
 
-### Badge da extensão
+### Detalhe do resumo
 
-A extensão adiciona um bloco destacado com o total somado:
+![Resumo do custo: produto, imposto, frete e total](docs/resumo-custo.png)
 
-![Badge Total (Produto + Imposto) injetado abaixo do imposto](docs/total-com-imposto.png)
+### Exemplo (valores da captura)
 
-> O total usa sempre o **preço atual** (o vermelho em destaque), **nunca** o preço riscado de “de / por”.
+| Item | Valor |
+|------|-------|
+| Produto | R$ 335,99 |
+| Imposto | R$ 111,26 |
+| Frete | R$ 99,00 |
+| **Total** | **R$ 546,25** |
+
+```text
+Resumo do custo
+Produto: R$ 335,99
+Imposto: R$ 111,26
+Frete:   R$ 99,00
+─────────────────
+Total:   R$ 546,25
+```
+
+> O total usa sempre o **preço atual** (vermelho), **nunca** o preço riscado de “de / por”.  
+> Se o frete for grátis, aparece `Frete: Grátis`. Se não for encontrado, aparece `Frete: —` e o total fica com produto + imposto.
 
 ---
 
 ## Estrutura do projeto
 
 ```text
-aliexpress-tax-total/
-├── manifest.json   # Configuração da extensão (Manifest V3)
-├── content.js      # Script injetado na página do produto
-├── docs/           # Prints usados neste README
-│   ├── pagina-produto.png
-│   └── total-com-imposto.png
-└── README.md
+plugin/
+├── README.md
+├── docs/
+│   ├── pagina-com-resumo.png   # Captura da página com a extensão
+│   └── resumo-custo.png        # Detalhe do badge
+└── aliexpress-tax-total/
+    ├── manifest.json           # Configuração (Manifest V3)
+    ├── content.js              # Script injetado na página
+    └── docs/                   # Cópias das imagens
 ```
 
 | Arquivo | Função |
 |---------|--------|
-| `manifest.json` | Define nome, versão e em quais URLs o script roda |
-| `content.js` | Lê preço e imposto no DOM, soma e injeta o badge |
-| `docs/` | Imagens de documentação |
+| `aliexpress-tax-total/manifest.json` | Nome, versão e URLs onde o script roda |
+| `aliexpress-tax-total/content.js` | Lê preço, imposto e frete, soma e injeta o badge |
+| `docs/` | Prints usados neste README |
 
 ---
 
@@ -89,7 +103,7 @@ aliexpress-tax-total/
    https://pt.aliexpress.com/item/...
    ```
 
-6. Recarregue a página (`F5`). O badge **Total (Produto + Imposto)** deve aparecer abaixo da linha de imposto.
+6. Recarregue a página (`F5`). O **Resumo do custo** com o **Total** deve aparecer abaixo da linha de imposto.
 
 ### Atualizar depois de mudar o código
 
@@ -101,22 +115,23 @@ aliexpress-tax-total/
 
 ## Como funciona
 
-1. O `content.js` é injetado automaticamente em páginas que batem com:
+1. O `content.js` é injetado em páginas que batem com:
    - `*://*.aliexpress.com/item/*`
    - `*://*.aliexpress.com/p/*`
 
-2. O script procura no DOM a linha de imposto (`estimated tax` ou `imposto` + valor em `R$`).
+2. Localiza a linha de imposto (`estimated tax` / `imposto` + `R$`).
 
-3. Localiza o **preço vigente** do produto (ignora preço riscado / `line-through`).
+3. Lê o **preço vigente** do produto (ignora preço riscado / `line-through`).
 
-4. Soma os dois valores e injeta o elemento `#ali-custom-tax-total`.
+4. Lê o **frete** (textos como `Ship from`, `Standard`, `frete`, `envio`, ou frete grátis).
 
-5. Um `MutationObserver` acompanha mudanças na página (troca de cor, kit, frete, variação). Como o AliExpress é uma SPA, o preço muda sem reload completo — o observer recalcula o total automaticamente.
+5. Soma tudo e injeta `#ali-custom-tax-total` com breakdown + **Total**.
+
+6. Um `MutationObserver` acompanha mudanças na página (variação, kit, frete). Como o AliExpress é uma SPA, o total é recalculado sem precisar de reload completo.
 
 ```text
-Preço atual  +  Imposto estimado  →  Badge "Total (Produto + Imposto)"
-     ↓                  ↓
-  R$ 3.812,63      R$ 3.335,96      →  R$ 7.148,59
+Produto   +   Imposto   +   Frete   →   Total
+R$ 335,99 + R$ 111,26 + R$ 99,00 → R$ 546,25
 ```
 
 ---
@@ -131,9 +146,9 @@ Preço atual  +  Imposto estimado  →  Badge "Total (Produto + Imposto)"
 ## Limitações
 
 - Só funciona em páginas de **item/produto** (`/item/` ou `/p/`).
-- Depende do texto de imposto estar visível na página (`estimated tax` / `imposto`).
-- O frete **não** entra na soma (apenas produto + imposto estimado).
-- Classes CSS do AliExpress mudam com frequência; a extensão busca por padrões de texto (`R$`, `estimated tax`), não por classes fixas.
+- Depende do texto de imposto estar visível (`estimated tax` / `imposto`).
+- Se o frete não for encontrado no DOM, o total usa apenas produto + imposto (`Frete: —`).
+- Classes CSS do AliExpress mudam com frequência; a extensão busca por padrões de texto (`R$`, `estimated tax`, `Ship from`), não por classes fixas.
 
 ---
 

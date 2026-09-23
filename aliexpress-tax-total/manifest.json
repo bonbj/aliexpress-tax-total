@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AliExpress Total com Imposto",
-  "version": "1.2",
-  "description": "Exibe o valor final com a soma do produto + imposto estimado.",
+  "version": "1.3",
+  "description": "Exibe o valor final com a soma do produto + imposto + frete.",
   "content_scripts": [
     {
       "matches": [
